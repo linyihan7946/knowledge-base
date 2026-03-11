@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/Administrator/.cache/huggingface/hub/**)",
+      "Read(//c/Users/Administrator/.cache/torch/**)",
+      "Bash(pip list:*)",
+      "Bash(ls -la docs/*.md 2>/dev/null | head -5 || echo \"Checking docs structure...\" && find docs -name \"*.md\" | head -10)",
+      "Bash(python ingest_md.py)",
+      "Bash(python query_md.py \"如何使用 threejs\" -k 3)",
+      "Bash(python query_md.py \"AI大模型是什么\" -k 3)",
+      "Bash(python query_md.py \"深度学习框架 PyTorch\" -k 5)",
+      "Bash(python query_md.py \"xdb 墙体\" -k 5)",
+      "Bash(python query_md.py \"户型墙体\" -k 5)"
+    ]
+  }
+}
