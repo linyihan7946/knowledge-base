@@ -8,6 +8,9 @@ venv/
 # Database
 chroma_db/
 
+# Docs
+docs/
+
 # OS
 .DS_Store
 Thumbs.db

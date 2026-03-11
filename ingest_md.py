@@ -3,8 +3,8 @@ from langchain_community.document_loaders import (
     DirectoryLoader,
     UnstructuredMarkdownLoader,
 )
-from langchain.text_splitter import MarkdownTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_text_splitters import MarkdownTextSplitter
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 
 
@@ -35,9 +35,6 @@ def ingest_markdown(source_dir: str, persist_dir: str):
     vector_db = Chroma.from_documents(
         documents=texts, embedding=embeddings, persist_directory=persist_dir
     )
-
-    # 5. 持久化存储
-    vector_db.persist()
     print(f"处理完成！数据库已保存至: {persist_dir}")
 
 
