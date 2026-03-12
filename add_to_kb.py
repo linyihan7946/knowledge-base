@@ -2,42 +2,41 @@ import argparse
 import sys
 import os
 from datetime import datetime
-from langchain_huggingface import HuggingFaceEmbeddings
+from dotenv import load_dotenv
+from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 
-os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+# 加载.env环境变量
+load_dotenv()
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
 
 PERSIST_DIRECTORY = "./chroma_db"
-KNOWLEDGE_DIR = "./docs/知识库"
 
 
-def get_embeddings(offline: bool = True):
-    model_kwargs = {"local_files_only": offline}
-    try:
-        embeddings = HuggingFaceEmbeddings(
-            model_name="./models/damo/nlp_gte_sentence-embedding_chinese-base",
-            model_kwargs=model_kwargs,
-        )
-        return embeddings
-    except Exception:
-        pass
-    return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2",
-        model_kwargs=model_kwargs,
+def get_embeddings():
+    """获取阿里百炼embedding模型"""
+    api_key = os.environ.get("DASHSCOPE_API_KEY")
+    base_url = os.environ.get(
+        "DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    )
+
+    return OpenAIEmbeddings(
+        model="text-embedding-v3",
+        api_key=api_key,
+        base_url=base_url,
+        chunk_size=10,
+        check_embedding_ctx_length=False,
     )
 
 
-def add_to_knowledge_base(
-    content: str, title: str = None, category: str = None, offline: bool = True
-):
+def add_to_knowledge_base(content: str, title: str = None, category: str = None):
     if not title:
         title = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    embeddings = get_embeddings(offline=offline)
+    embeddings = get_embeddings()
     vector_db = Chroma(
         persist_directory=PERSIST_DIRECTORY, embedding_function=embeddings
     )
@@ -61,11 +60,11 @@ if __name__ == "__main__":
     parser.add_argument("content", help="要添加的内容")
     parser.add_argument("-t", "--title", help="标题（可选）")
     parser.add_argument("-c", "--category", help="分类（可选，如：习惯、备忘等）")
-    parser.add_argument("--online", action="store_true", help="在线模式")
 
     args = parser.parse_args()
-    offline = not args.online
 
     add_to_knowledge_base(
-        content=args.content, title=args.title, category=args.category, offline=offline
+        content=args.content,
+        title=args.title,
+        category=args.category,
     )

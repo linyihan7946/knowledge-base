@@ -1,47 +1,37 @@
 import os
+from dotenv import load_dotenv
 from langchain_community.document_loaders import (
     DirectoryLoader,
     UnstructuredMarkdownLoader,
 )
 from langchain_text_splitters import MarkdownTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
 
-# 设置HuggingFace镜像（国内用户）
-os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+# 加载.env环境变量
+load_dotenv()
 
 
-def get_embeddings(offline: bool = True):
-    """获取embedding模型，优先尝试中文模型"""
-    model_kwargs = {"local_files_only": offline}
+def get_embeddings():
+    """获取阿里百炼embedding模型"""
+    api_key = os.environ.get("DASHSCOPE_API_KEY")
+    base_url = os.environ.get(
+        "DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    )
 
-    # 方案1：使用阿里达摩院GTE中文模型（优先）
-    try:
-        print("加载GTE中文embedding模型...")
-        embeddings = HuggingFaceEmbeddings(
-            model_name="./models/damo/nlp_gte_sentence-embedding_chinese-base",
-            model_kwargs=model_kwargs,
-        )
-        print("成功加载GTE中文模型！")
-        return embeddings
-    except Exception as e:
-        print(f"加载GTE中文模型失败: {e}")
-
-    # 方案2：使用已缓存的英文模型
-    try:
-        print("使用已缓存的英文模型...")
-        embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2",
-            model_kwargs=model_kwargs,
-        )
-        print("成功加载英文模型（对中文支持较差）！")
-        return embeddings
-    except Exception as e:
-        print(f"加载英文模型失败: {e}")
-        raise
+    print("加载text-embedding-v3模型...")
+    embeddings = OpenAIEmbeddings(
+        model="text-embedding-v3",
+        api_key=api_key,
+        base_url=base_url,
+        chunk_size=10,
+        check_embedding_ctx_length=False,
+    )
+    print("成功加载text-embedding-v3模型！")
+    return embeddings
 
 
-def ingest_markdown(source_dir: str, persist_dir: str, offline: bool = True):
+def ingest_markdown(source_dir: str, persist_dir: str):
     # 1. 递归加载所有 .md 文件
     print(f"正在加载目录 {source_dir} 下的 Markdown 文件...")
     loader = DirectoryLoader(
@@ -55,19 +45,27 @@ def ingest_markdown(source_dir: str, persist_dir: str, offline: bool = True):
 
     # 2. 文本分段 (针对 Markdown 优化)
     print("正在对文档进行分段...")
-    # 中文字符较多，适当增大chunk_size
     text_splitter = MarkdownTextSplitter(chunk_size=1500, chunk_overlap=200)
     texts = text_splitter.split_documents(documents)
     print(f"分段完成，产生 {len(texts)} 个文本块。")
 
-    # 3. 初始化 Embedding 模型 (使用多语言模型)
-    print("正在初始化 Embedding 模型...")
-    embeddings = get_embeddings(offline=offline)
+    # 3. 清理文本内容
+    print("正在清理文本内容...")
+    cleaned_texts = []
+    for doc in texts:
+        content = str(doc.page_content).strip()
+        if content and len(content) > 10:
+            cleaned_texts.append(content)
+    print(f"有效文本块: {len(cleaned_texts)} 个。")
 
-    # 4. 向量化并入库 (ChromaDB)
+    # 4. 初始化 Embedding 模型
+    print("正在初始化 Embedding 模型...")
+    embeddings = get_embeddings()
+
+    # 5. 直接使用from_texts创建向量库
     print("正在生成向量并存入数据库...")
-    vector_db = Chroma.from_documents(
-        documents=texts, embedding=embeddings, persist_directory=persist_dir
+    vector_db = Chroma.from_texts(
+        texts=cleaned_texts, embedding=embeddings, persist_directory=persist_dir
     )
     print(f"处理完成！数据库已保存至: {persist_dir}")
 
@@ -78,19 +76,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Markdown 文件向量化入库工具")
     parser.add_argument("--source", "-s", default="./docs", help="Markdown 文件目录")
     parser.add_argument("--persist", "-p", default="./chroma_db", help="向量库保存目录")
-    parser.add_argument(
-        "--online", action="store_true", help="在线模式（允许网络请求下载模型）"
-    )
 
     args = parser.parse_args()
 
     SOURCE_DIRECTORY = args.source
     PERSIST_DIRECTORY = args.persist
-    offline = not args.online
 
     # 确保目录存在
     if not os.path.exists(SOURCE_DIRECTORY):
         os.makedirs(SOURCE_DIRECTORY)
         print(f"请将你的 .md 文件放入 {SOURCE_DIRECTORY} 目录后再次运行。")
     else:
-        ingest_markdown(SOURCE_DIRECTORY, PERSIST_DIRECTORY, offline=offline)
+        ingest_markdown(SOURCE_DIRECTORY, PERSIST_DIRECTORY)
