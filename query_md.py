@@ -1,20 +1,42 @@
 import argparse
 import sys
+import os
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 
+# 设置HuggingFace镜像（国内用户）
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
 # 设置标准输出编码为 UTF-8（Windows 兼容）
-if sys.platform == 'win32':
-    sys.stdout.reconfigure(encoding='utf-8')
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")
 
 
-def query_vector_db(query_text: str, persist_dir: str, top_k: int = 3, offline: bool = True):
-    # 1. 加载相同的 Embedding 模型 (离线模式)
+def get_embeddings(offline: bool = True):
+    """获取embedding模型，优先尝试中文模型"""
     model_kwargs = {"local_files_only": offline}
-    embeddings = HuggingFaceEmbeddings(
-        model_name="all-MiniLM-L6-v2",
-        model_kwargs=model_kwargs
+
+    # 方案1：尝试使用多语言模型（支持中英文）
+    try:
+        embeddings = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            model_kwargs=model_kwargs,
+        )
+        return embeddings
+    except Exception:
+        pass
+
+    # 方案2：使用已缓存的英文模型
+    return HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2", model_kwargs=model_kwargs
     )
+
+
+def query_vector_db(
+    query_text: str, persist_dir: str, top_k: int = 3, offline: bool = True
+):
+    # 1. 加载相同的 Embedding 模型
+    embeddings = get_embeddings(offline=offline)
 
     # 2. 加载现有数据库
     vector_db = Chroma(persist_directory=persist_dir, embedding_function=embeddings)
@@ -22,15 +44,15 @@ def query_vector_db(query_text: str, persist_dir: str, top_k: int = 3, offline: 
     # 3. 执行相似度搜索
     results = vector_db.similarity_search(query_text, k=top_k)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"查询: {query_text}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     for i, doc in enumerate(results):
         print(f"--- 结果 {i + 1} ---")
         print(f"来源: {doc.metadata.get('source', '未知')}")
         # 清理内容中的特殊 Unicode 字符
-        content = doc.page_content.replace('\u200b', '').replace('\ufeff', '')
+        content = doc.page_content.replace("\u200b", "").replace("\ufeff", "")
         print(f"内容:\n{content}")
         print("-" * 40 + "\n")
 
@@ -47,7 +69,7 @@ def interactive_query(persist_dir: str, offline: bool = True):
     while True:
         try:
             query = input("请输入问题: ").strip()
-            if query.lower() in ('quit', 'exit', 'q'):
+            if query.lower() in ("quit", "exit", "q"):
                 print("再见！")
                 break
             if query:
@@ -64,7 +86,9 @@ if __name__ == "__main__":
     parser.add_argument("query", nargs="?", help="查询内容")
     parser.add_argument("-k", "--top-k", type=int, default=5, help="返回结果数量")
     parser.add_argument("-i", "--interactive", action="store_true", help="交互模式")
-    parser.add_argument("--online", action="store_true", help="在线模式（允许网络请求）")
+    parser.add_argument(
+        "--online", action="store_true", help="在线模式（允许网络请求）"
+    )
 
     args = parser.parse_args()
 
@@ -73,7 +97,9 @@ if __name__ == "__main__":
     if args.interactive:
         interactive_query(PERSIST_DIRECTORY, offline=offline)
     elif args.query:
-        query_vector_db(args.query, PERSIST_DIRECTORY, top_k=args.top_k, offline=offline)
+        query_vector_db(
+            args.query, PERSIST_DIRECTORY, top_k=args.top_k, offline=offline
+        )
     else:
         # 默认交互模式
         interactive_query(PERSIST_DIRECTORY, offline=offline)
