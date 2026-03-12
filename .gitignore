@@ -8,6 +8,9 @@ venv/
 # Database
 chroma_db/
 
+# Models
+models/
+
 # Docs
 docs/
 

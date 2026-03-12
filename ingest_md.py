@@ -15,17 +15,17 @@ def get_embeddings(offline: bool = True):
     """获取embedding模型，优先尝试中文模型"""
     model_kwargs = {"local_files_only": offline}
 
-    # 方案1：尝试使用多语言模型（支持中英文）
+    # 方案1：使用阿里达摩院GTE中文模型（优先）
     try:
-        print("尝试加载多语言模型...")
+        print("加载GTE中文embedding模型...")
         embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            model_name="./models/damo/nlp_gte_sentence-embedding_chinese-base",
             model_kwargs=model_kwargs,
         )
-        print("成功加载多语言模型！")
+        print("成功加载GTE中文模型！")
         return embeddings
     except Exception as e:
-        print(f"加载多语言模型失败: {e}")
+        print(f"加载GTE中文模型失败: {e}")
 
     # 方案2：使用已缓存的英文模型
     try:

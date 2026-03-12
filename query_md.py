@@ -16,10 +16,10 @@ def get_embeddings(offline: bool = True):
     """获取embedding模型，优先尝试中文模型"""
     model_kwargs = {"local_files_only": offline}
 
-    # 方案1：尝试使用多语言模型（支持中英文）
+    # 方案1：使用阿里达摩院GTE中文模型（优先）
     try:
         embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            model_name="./models/damo/nlp_gte_sentence-embedding_chinese-base",
             model_kwargs=model_kwargs,
         )
         return embeddings
@@ -28,7 +28,8 @@ def get_embeddings(offline: bool = True):
 
     # 方案2：使用已缓存的英文模型
     return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2", model_kwargs=model_kwargs
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        model_kwargs=model_kwargs,
     )
 
 
