@@ -82,6 +82,64 @@ python query_md.py "推荐一些广州好吃的餐厅"
 python query_md.py "林文捷的工作是什么" -k 5 -p ./chroma_db
 ```
 
+### 5. LLM 问答（RAG 对话）
+
+利用 `chat_with_kb.py` 进行基于知识库的 AI 问答。系统会先检索相关文档，然后让 LLM 基于检索结果生成自然语言回答：
+
+```bash
+# 基本问答
+python chat_with_kb.py "我的笔记里关于 Python 学习有什么建议？"
+
+# 自定义检索数量和模型
+python chat_with_kb.py "如何保持健康？" -k 5 -m qwen-turbo
+
+# 可选模型：qwen-turbo（更快更便宜）/ qwen-plus（质量更高）/ qwen-max（最强）
+```
+
+### 6. Wiki 知识库浏览界面
+
+双击运行 `start_wiki.bat` 或在终端执行以下命令启动 Wiki 浏览界面：
+
+```bash
+# 首次运行需安装 MkDocs
+pip install mkdocs mkdocs-material
+
+# 同步 AI 整理后的 index.md、concepts/、entities/ 到 MkDocs 文档目录
+python prepare_wiki_docs.py
+
+# 启动 Wiki 服务
+mkdocs serve -a 127.0.0.1:8000
+```
+
+然后在浏览器中打开 `http://127.0.0.1:8000` 即可浏览和搜索知识库。`start_wiki.bat` 会自动执行同步并打开浏览器。
+
+### 7. 自动 Wiki 整理（AI 驱动）
+
+利用 `auto_wiki_writer.py` 自动从原始笔记中提取概念和实体，生成结构化的 Wiki 页面：
+
+```bash
+# 全量整理（增量模式，只处理新增/修改的笔记）
+python auto_wiki_writer.py
+
+# 模拟运行（不实际写入文件）
+python auto_wiki_writer.py --dry-run
+
+# 只处理单个文件
+python auto_wiki_writer.py --file "raw/mubu/AI/AI：ChatGPT.md"
+
+# 强制重新处理所有文件
+python auto_wiki_writer.py --force
+```
+
+**工作原理：**
+1. 扫描 `raw/mubu/` 下的所有 `.md` 笔记
+2. 计算 SHA256 检测文件是否修改（增量更新）
+3. 调用 LLM 提取核心概念/实体
+4. 按 `SCHEMA.md` 规范生成 `concepts/*.md` 和 `entities/*.md`
+5. 自动更新 `index.md` 索引和 `log.md` 操作日志
+
+**效果：** 随着笔记积累，AI 生成的 Wiki 会越来越完整，检索准确率也会越来越高。
+
 ---
 
 ## 📁 目录结构
@@ -89,21 +147,36 @@ python query_md.py "林文捷的工作是什么" -k 5 -p ./chroma_db
 ```text
 knowledge-base/
 ├── docs/                   # 存放需要被向量化的 Markdown 笔记原文件
+├── raw/                    # 原始文档（只读，从幕布下载）
+│   └── mubu/               # 幕布文档原始 Markdown 文件
+├── concepts/               # AI 生成的概念页面（按 Wiki 规范整理）
+├── entities/               # AI 生成的实体页面（按 Wiki 规范整理）
+├── comparisons/            # AI 生成的比较页面
 ├── chroma_db/              # ChromaDB 向量数据库持久化保存目录（自动生成）
 ├── .env                    # 环境变量配置文件（需手动创建）
+├── .wiki_state.json        # AI 整理状态文件（记录已处理的文件 SHA256）
+├── index.md                # Wiki 索引页面（自动生成）
+├── SCHEMA.md               # Wiki 规范文档
+├── log.md                  # 操作日志
 ├── ingest_md.py            # 核心脚本：读取并向量化 docs 下所有 .md 文件
 ├── query_md.py             # 核心脚本：执行自然语言相似度查询
+├── chat_with_kb.py         # LLM 问答脚本（RAG 对话）
+├── auto_wiki_writer.py     # 新增：AI 自动 Wiki 整理脚本
 ├── add_to_kb.py            # 工具脚本：直接将单段纯文本添加进知识库
 ├── rebuild_vectordb.py     # 工具脚本：清理旧库并全量重新构建
+├── mkdocs.yml              # MkDocs Wiki 界面配置
+├── start_wiki.bat          # Wiki 服务启动脚本（Windows）
 └── readme.md               # 本项目说明文档
 ```
 
 ---
-
 ## 💡 开发 / Skill 设计参考 (For OpenClaw)
 
 对于后续编写 `OpenClaw` 智能体 Skill 配置，请参考以下行为逻辑：
-- **触发意图 1（检索）**: 当用户表达“帮我查一下关于XXX的笔记”、“检索知识库”等意图时，可调用 `python query_md.py "<query>"`。注意要对返回的 `--- 结果 N ---` 等格式化内容进行阅读理解和二次总结后，再以人类自然语言回复给终端用户。
-- **触发意图 2（构建更新）**: 当用户要求“更新知识库”、“向量化最新笔记”时，可调用 `python ingest_md.py`。
-- **触发意图 3（清空重建）**: 当用户要求“清空知识库”、“重建向量库”时，可调用 `python rebuild_vectordb.py`。
-- **触发意图 4（碎片记忆）**: 当用户要求“帮我记下来...”且为短文本片语时，可调用 `python add_to_kb.py "<content>" -t "<title>"`。
+
+- **触发意图 1（检索）**: 当用户表达"帮我查一下关于XXX的笔记"、"检索知识库"等意图时，可调用 `python query_md.py "<query>"`。注意要对返回的 `--- 结果 N ---` 等格式化内容进行阅读理解和二次总结后，再以人类自然语言回复给终端用户。
+- **触发意图 2（构建更新）**: 当用户要求"更新知识库"、"向量化最新笔记"时，可调用 `python ingest_md.py`。
+- **触发意图 3（清空重建）**: 当用户要求"清空知识库"、"重建向量库"时，可调用 `python rebuild_vectordb.py`。
+- **触发意图 4（碎片记忆）**: 当用户要求"帮我记下来..."且为短文本片语时，可调用 `python add_to_kb.py "<content>" -t "<title>"`。
+- **触发意图 5（LLM 问答）**: 当用户要求"帮我问问知识库"、"基于笔记回答"等意图时，可调用 `python chat_with_kb.py "<query>"`。系统会自动检索相关文档并让 LLM 生成回答。
+- **触发意图 6（Wiki 浏览）**: 当用户要求"打开 Wiki"、"浏览知识库"时，可指导用户运行 `start_wiki.bat` 或 `mkdocs serve`。

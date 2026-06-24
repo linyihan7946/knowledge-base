@@ -14,6 +14,12 @@ models/
 
 # Docs
 docs/
+site/
+concepts/
+entities/
+
+# Raw notes (immutable source material - never commit)
+raw/mubu/
 
 # OS
 .DS_Store

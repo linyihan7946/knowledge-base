@@ -1,0 +1,108 @@
+# MkDocs 配置 — Wiki 知识库浏览界面
+site_name: 个人知识库 Wiki
+site_description: 基于 Markdown 的个人知识库 Wiki 浏览界面
+site_author: Knowledge Base
+
+# 主题配置
+theme:
+  name: material
+  language: zh
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: 切换至深色模式
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: 切换至浅色模式
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+# Markdown 扩展
+markdown_extensions:
+  - admonition
+  - footnotes
+  - codehilite
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.details
+
+# 插件配置
+plugins:
+  - search:
+      lang: zh
+
+# 导航配置
+nav:
+  - 首页: index.md
+  - 自动整理 Wiki:
+      - 操作日志: log.md
+      - Wiki 规范: SCHEMA.md
+  - 概念入口:
+      - AI 概述: concepts/ai-overview.md
+      - 大语言模型: concepts/llm-models.md
+      - AI Agent: concepts/ai-agent.md
+      - Python: concepts/python.md
+      - Three.js: concepts/threejs-overview.md
+      - 健康: concepts/健康.md
+      - 生活: concepts/生活.md
+      - 视频制作: concepts/视频制作.md
+  - 实体入口:
+      - 项目: entities/项目.md
+      - 作品: entities/作品.md
+      - 技术讲解: entities/技术讲解.md
+      - 工作日志: entities/工作日志.md
+      - 青训营: entities/青训营.md
+  - 原始笔记入口:
+      - AI: AI/AI.md
+      - Python: 编程/Python.md
+      - 工作: 工作/工作.md
+      - 健康: 健康/健康.md
+      - 生活: 生活/放松.md
+
+# 未列入导航的 Markdown 仍会被构建并进入站内搜索。
+not_in_nav: |
+  readme.md
+  **/*.md
+  comparisons/**/*.md
+  concepts/**/*.md
+  docs/**/*.md
+  entities/**/*.md
+
+# 大量旧笔记和 AI 生成页面依赖站内搜索，不强制全部出现在导航里。
+# 个别历史笔记的旧相对链接不阻断本地 Wiki 启动。
+validation:
+  nav:
+    omitted_files: ignore
+  links:
+    not_found: ignore
+
+# 仓库配置
+repo_url: https://github.com/yourusername/knowledge-base
+repo_name: knowledge-base
+
+# 额外配置
+extra:
+  generator: false
+
+# 文件配置
+docs_dir: docs
+site_dir: site
+exclude_docs: |
+  **/.generated-by-prepare-wiki-docs
