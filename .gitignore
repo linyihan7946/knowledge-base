@@ -20,6 +20,7 @@ entities/
 
 # Raw notes (immutable source material - never commit)
 raw/mubu/
+raw/ai/
 
 # OS
 .DS_Store

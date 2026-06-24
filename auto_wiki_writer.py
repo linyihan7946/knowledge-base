@@ -17,7 +17,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 load_dotenv()
 
 # 配置
-RAW_DIR = Path("raw/mubu")
+RAW_DIRS = [Path("raw/mubu"), Path("raw/ai")]
 CONCEPTS_DIR = Path("concepts")
 ENTITIES_DIR = Path("entities")
 COMPARISONS_DIR = Path("comparisons")
@@ -28,7 +28,7 @@ LLM_MODEL = os.getenv("WIKI_LLM_MODEL", "qwen-plus")
 MAX_TOKENS = 8000
 
 # 确保目录存在
-for d in [CONCEPTS_DIR, ENTITIES_DIR, COMPARISONS_DIR]:
+for d in [*RAW_DIRS, CONCEPTS_DIR, ENTITIES_DIR, COMPARISONS_DIR]:
     d.mkdir(exist_ok=True)
 
 
@@ -66,6 +66,30 @@ def read_raw_file(file_path: Path) -> str:
         if len(parts) >= 3:
             content = parts[2].strip()
     return content
+
+
+def raw_relative_path(file_path: Path) -> str:
+    """返回用于状态记录和 sources 的仓库相对路径。"""
+    file_path = Path(file_path)
+    for raw_dir in RAW_DIRS:
+        try:
+            return (raw_dir / file_path.relative_to(raw_dir)).as_posix()
+        except ValueError:
+            continue
+
+    try:
+        return file_path.relative_to(Path.cwd()).as_posix()
+    except ValueError:
+        return file_path.as_posix()
+
+
+def iter_raw_files() -> list[Path]:
+    """扫描所有原始来源目录。"""
+    raw_files: list[Path] = []
+    for raw_dir in RAW_DIRS:
+        if raw_dir.exists():
+            raw_files.extend(raw_dir.rglob("*.md"))
+    return sorted(raw_files, key=lambda path: path.as_posix())
 
 
 def slugify(title: str) -> str:
@@ -272,19 +296,20 @@ def main():
     if args.file:
         raw_files = [Path(args.file)]
     else:
-        raw_files = sorted(RAW_DIR.rglob("*.md"))
+        raw_files = iter_raw_files()
 
     if not raw_files:
         print("❌ 未找到任何原始笔记文件")
         return
 
-    print(f"📂 找到 {len(raw_files)} 个原始笔记文件")
+    raw_dirs_display = ", ".join(raw_dir.as_posix() for raw_dir in RAW_DIRS)
+    print(f"📂 在 {raw_dirs_display} 找到 {len(raw_files)} 个原始笔记文件")
 
     processed_count = 0
     new_pages_count = 0
 
     for raw_file in raw_files:
-        rel_path = f"raw/mubu/{raw_file.relative_to(RAW_DIR)}"
+        rel_path = raw_relative_path(raw_file)
         current_sha = compute_sha256(raw_file)
 
         # 检查是否已处理且未修改
