@@ -10,6 +10,29 @@ from langchain_community.vectorstores import Chroma
 
 # 加载.env环境变量
 load_dotenv()
+SYSTEM_SOURCES = {"docs/log.md", "docs/index.md", "docs/SCHEMA.md"}
+
+
+def normalize_source_path(source: str) -> str:
+    if not source:
+        return "unknown"
+
+    try:
+        source = os.path.relpath(source, start=os.getcwd())
+    except ValueError:
+        pass
+    return source.replace("\\", "/")
+
+
+def classify_source_layer(source: str) -> str:
+    normalized = normalize_source_path(source)
+    if normalized in SYSTEM_SOURCES:
+        return "system"
+    if normalized.startswith(("docs/concepts/", "docs/entities/", "docs/comparisons/")):
+        return "wiki"
+    if normalized.startswith("docs/"):
+        return "raw-note-mirror"
+    return "unknown"
 
 
 def get_embeddings():
@@ -52,11 +75,16 @@ def ingest_markdown(source_dir: str, persist_dir: str):
 
     # 3. 清理文本内容
     print("正在清理文本内容...")
-    cleaned_texts = []
+    cleaned_documents = []
     for doc in texts:
         content = str(doc.page_content).strip()
         if content and len(content) > 10:
-            cleaned_texts.append(content)
+            doc.page_content = content
+            source = normalize_source_path(doc.metadata.get("source", ""))
+            doc.metadata["source"] = source
+            doc.metadata["source_layer"] = classify_source_layer(source)
+            cleaned_documents.append(doc)
+    cleaned_texts = cleaned_documents
     print(f"有效文本块: {len(cleaned_texts)} 个。")
 
     # 4. 初始化 Embedding 模型
@@ -65,8 +93,8 @@ def ingest_markdown(source_dir: str, persist_dir: str):
 
     # 5. 直接使用from_texts创建向量库
     print("正在生成向量并存入数据库...")
-    vector_db = Chroma.from_texts(
-        texts=cleaned_texts, embedding=embeddings, persist_directory=persist_dir
+    vector_db = Chroma.from_documents(
+        documents=cleaned_documents, embedding=embeddings, persist_directory=persist_dir
     )
     print(f"处理完成！数据库已保存至: {persist_dir}")
 
