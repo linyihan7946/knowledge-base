@@ -5,6 +5,10 @@ LLM 问答脚本 — 基于知识库的 RAG 对话
 import argparse
 import os
 import sys
+
+# 移除 Hermes venv 路径，避免加载损坏的 numpy
+sys.path = [p for p in sys.path if 'hermes-agent' not in p.lower()]
+
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import Chroma

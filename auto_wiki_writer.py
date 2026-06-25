@@ -16,6 +16,11 @@ from langchain_core.messages import HumanMessage, SystemMessage
 # 加载环境变量
 load_dotenv()
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 # 配置
 RAW_DIRS = [Path("raw/mubu"), Path("raw/ai")]
 CONCEPTS_DIR = Path("concepts")
@@ -166,7 +171,6 @@ ai, model, architecture, training, inference, fine-tuning, deep-learning, machin
                 base_url=os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
                 temperature=0.3,
                 max_tokens=MAX_TOKENS,
-                response_format={"type": "json_object"},
             )
             messages = [
                 SystemMessage(content=system_prompt),
@@ -321,6 +325,9 @@ def main():
 
         if len(content.strip()) < 100:
             print("  ⏭️ 内容过短，跳过")
+            if not args.dry_run:
+                state[rel_path] = current_sha
+                update_log(f"跳过短笔记: {rel_path}")
             continue
 
         # 调用 LLM 提取
@@ -328,6 +335,9 @@ def main():
 
         if not pages:
             print("  ⏭️ 未提取到有效页面")
+            if not args.dry_run:
+                state[rel_path] = current_sha
+                update_log(f"未提取到有效页面: {rel_path}")
             continue
 
         print(f"  ✅ 提取到 {len(pages)} 个页面")

@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from langchain_community.document_loaders import (
     DirectoryLoader,
-    UnstructuredMarkdownLoader,
+    TextLoader,
 )
 from langchain_text_splitters import MarkdownTextSplitter
 from langchain_openai import OpenAIEmbeddings
@@ -37,7 +37,8 @@ def ingest_markdown(source_dir: str, persist_dir: str):
     loader = DirectoryLoader(
         source_dir,
         glob="**/*.md",
-        loader_cls=UnstructuredMarkdownLoader,
+        loader_cls=TextLoader,
+        loader_kwargs={"encoding": "utf-8"},
         show_progress=True,
     )
     documents = loader.load()
