@@ -17,6 +17,9 @@ docs/
 site/
 concepts/
 entities/
+index.md
+log.md
+.wiki_state.json
 
 # Raw notes (immutable source material - never commit)
 raw/mubu/
