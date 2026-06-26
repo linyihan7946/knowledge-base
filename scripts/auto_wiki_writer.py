@@ -285,6 +285,7 @@ def main() -> int:
             print(f"跳过短笔记：{rel_path}")
             if not args.dry_run:
                 state[rel_path] = current_sha
+                save_state(state)
                 update_log(f"跳过短笔记：{rel_path}")
             continue
 
@@ -299,6 +300,7 @@ def main() -> int:
             print(f"未提取到页面：{rel_path}")
             if not args.dry_run:
                 state[rel_path] = current_sha
+                save_state(state)
                 update_log(f"未提取到页面：{rel_path}")
             continue
 
@@ -309,6 +311,8 @@ def main() -> int:
                 print(f"  写入：{relative_to_root(target)}")
                 page_count += 1
             state[rel_path] = current_sha
+            save_state(state)
+            update_index()
             update_log(f"整理笔记：{rel_path} -> {len(pages)} 个页面")
         processed_count += 1
 
