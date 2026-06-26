@@ -4,13 +4,22 @@
       "Read(//c/Users/Administrator/.cache/huggingface/hub/**)",
       "Read(//c/Users/Administrator/.cache/torch/**)",
       "Bash(pip list:*)",
-      "Bash(ls -la docs/*.md 2>/dev/null | head -5 || echo \"Checking docs structure...\" && find docs -name \"*.md\" | head -10)",
-      "Bash(python ingest_md.py)",
-      "Bash(python query_md.py \"如何使用 threejs\" -k 3)",
-      "Bash(python query_md.py \"AI大模型是什么\" -k 3)",
-      "Bash(python query_md.py \"深度学习框架 PyTorch\" -k 5)",
-      "Bash(python query_md.py \"xdb 墙体\" -k 5)",
-      "Bash(python query_md.py \"户型墙体\" -k 5)"
+      "Bash(python kb.py --help)",
+      "Bash(python kb.py init)",
+      "Bash(python kb.py build-wiki:*)",
+      "Bash(python kb.py prepare-docs)",
+      "Bash(python kb.py ingest:*)",
+      "Bash(python kb.py build-all:*)",
+      "Bash(python kb.py query:*)",
+      "Bash(python kb.py chat:*)",
+      "Bash(python kb.py add:*)",
+      "Bash(python kb.py rebuild:*)",
+      "Bash(python scripts/auto_wiki_writer.py:*)",
+      "Bash(python scripts/prepare_wiki_docs.py)",
+      "Bash(python scripts/ingest_md.py:*)",
+      "Bash(python scripts/query_md.py:*)",
+      "Bash(python scripts/chat_with_kb.py:*)",
+      "Bash(Get-ChildItem build/docs -Recurse -Filter *.md | Select-Object -First 10)"
     ]
   }
 }

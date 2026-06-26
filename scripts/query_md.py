@@ -13,7 +13,7 @@ load_dotenv()
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def resolve_path(value: str | Path) -> Path:
@@ -67,7 +67,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="向量库语义检索")
     parser.add_argument("query", help="查询文本")
     parser.add_argument("-k", "--top_k", type=int, default=3, help="返回结果数量")
-    parser.add_argument("-p", "--persist", default="./chroma_db", help="向量库目录")
+    parser.add_argument("-p", "--persist", default="./build/chroma_db", help="向量库目录")
     args = parser.parse_args()
     query_vector_db(args.query, args.persist, args.top_k)
     return 0

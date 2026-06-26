@@ -1,12 +1,14 @@
 # Knowledge Base Wiki
 
-一个开箱即用的个人/团队 Markdown 知识库模板。你只需要把原始笔记放进 `raw/notes`，运行一条构建命令，就可以得到：
+一个开箱即用的 Markdown 知识库模板。原始笔记放在 `raw/notes` 或 `raw/ai`，结构化知识图谱放在 `wiki/`，MkDocs 和向量库等构建产物放在 `build/`。
 
-- 结构化 Wiki 页面：概念、实体、比较页
-- MkDocs 浏览站点
-- ChromaDB 本地向量库
-- 基于知识库的语义检索和 RAG 问答
-- 随手追加笔记并进入下一轮 Wiki 构建
+你可以用它完成：
+
+- 从原始 Markdown 笔记生成 Wiki 知识图谱
+- 用 MkDocs 浏览 Wiki
+- 用 ChromaDB 构建本地向量库
+- 基于知识库做语义检索和 RAG 问答
+- 随手追加笔记，并进入下一轮知识图谱构建
 
 ## 快速开始
 
@@ -27,6 +29,7 @@ KB_API_KEY=your_api_key
 KB_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 KB_LLM_MODEL=qwen-plus
 KB_EMBEDDING_MODEL=text-embedding-v3
+WIKI_RAW_DIRS=raw/notes;raw/ai
 ```
 
 ### 3. 初始化目录
@@ -41,6 +44,12 @@ python kb.py init
 raw/notes/
 ```
 
+用命令追加的补充笔记会写入：
+
+```text
+raw/ai/
+```
+
 ### 4. 一键构建
 
 ```bash
@@ -49,9 +58,9 @@ python kb.py build-all
 
 这条命令会依次执行：
 
-1. 从原始笔记生成 Wiki 层
-2. 同步 MkDocs 文档目录
-3. 构建本地向量库
+1. 从 `raw/notes`、`raw/ai` 生成 `wiki/` 知识图谱层
+2. 同步到 `build/docs`
+3. 构建本地向量库 `build/chroma_db`
 
 ### 5. 问答
 
@@ -88,19 +97,25 @@ python kb.py serve
 
 ```text
 knowledge-base/
-  raw/notes/          # 外部用户放原始 Markdown 笔记
-  raw/ai/             # kb.py add 写入的补充笔记
-  concepts/           # AI 生成的概念页
-  entities/           # AI 生成的实体页
-  comparisons/        # AI 生成的比较页
-  docs/               # MkDocs 构建源目录
-  chroma_db/          # ChromaDB 本地向量库
-  index.md            # 自动生成的 Wiki 索引
-  log.md              # 自动生成的构建日志
-  .wiki_state.json    # 自动生成的增量构建状态
+  kb.py                 # 统一入口
+  scripts/              # 底层脚本
+  raw/
+    notes/              # 原始 Markdown 笔记
+    ai/                 # kb.py add 写入的补充笔记
+  wiki/
+    concepts/           # AI 生成的概念页
+    entities/           # AI 生成的实体页
+    comparisons/        # AI 生成的比较页
+    index.md            # 自动生成的 Wiki 索引
+    log.md              # 自动生成的构建日志
+    .wiki_state.json    # 自动生成的增量构建状态
+  build/
+    docs/               # MkDocs 构建源目录
+    site/               # MkDocs 静态站点输出
+    chroma_db/          # ChromaDB 本地向量库
 ```
 
-这些目录和状态文件默认被 `.gitignore` 忽略，避免把个人笔记、向量库和生成内容提交到公开仓库。
+`raw/`、`wiki/`、`build/` 默认被 `.gitignore` 忽略，避免把个人笔记、生成知识图谱和向量库提交到公开仓库。
 
 ## 支持的原始资料
 
@@ -111,14 +126,14 @@ knowledge-base/
 ## 构建流程
 
 ```text
-raw/notes/*.md
-  -> auto_wiki_writer.py
-  -> concepts / entities / comparisons / index.md / log.md
-  -> prepare_wiki_docs.py
-  -> docs/
-  -> ingest_md.py
-  -> chroma_db/
-  -> query_md.py / chat_with_kb.py
+raw/notes/*.md + raw/ai/*.md
+  -> scripts/auto_wiki_writer.py
+  -> wiki/concepts / wiki/entities / wiki/comparisons / wiki/index.md / wiki/log.md
+  -> scripts/prepare_wiki_docs.py
+  -> build/docs/
+  -> scripts/ingest_md.py
+  -> build/chroma_db/
+  -> scripts/query_md.py / scripts/chat_with_kb.py
 ```
 
 ## 配置项
@@ -130,7 +145,7 @@ KB_API_KEY=your_api_key
 KB_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 KB_LLM_MODEL=qwen-plus
 KB_EMBEDDING_MODEL=text-embedding-v3
-WIKI_RAW_DIRS=raw/notes;raw/ai;raw/mubu
+WIKI_RAW_DIRS=raw/notes;raw/ai
 ```
 
 兼容旧变量名：
@@ -141,18 +156,11 @@ WIKI_RAW_DIRS=raw/notes;raw/ai;raw/mubu
 
 ## 发布成通用模板时的建议
 
-发布前保持以下文件不要提交：
+发布前保持以下目录和文件不提交：
 
 - `.env`
 - `raw/`
-- `docs/`
-- `site/`
-- `concepts/`
-- `entities/`
-- `comparisons/`
-- `chroma_db/`
-- `index.md`
-- `log.md`
-- `.wiki_state.json`
+- `wiki/`
+- `build/`
 
 这样外部用户 clone 后，运行 `python kb.py init` 就能得到自己的空知识库。

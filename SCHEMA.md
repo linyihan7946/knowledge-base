@@ -1,6 +1,6 @@
 # Wiki Schema
 
-本项目把原始 Markdown 笔记整理成结构化 Wiki 页面，并继续用于浏览、检索和 RAG 问答。
+本项目把 `raw/notes` 和 `raw/ai` 中的原始 Markdown 笔记整理成 `wiki/` 下的结构化页面，并继续用于浏览、检索和 RAG 问答。
 
 ## 页面类型
 

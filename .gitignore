@@ -6,13 +6,15 @@ __pycache__/
 venv/
 .env
 
-# Database
-chroma_db/
-
 # Models
 models/
 
 # Generated knowledge content
+build/
+wiki/
+
+# Legacy generated paths from pre-wiki/build layout
+chroma_db/
 docs/
 site/
 concepts/

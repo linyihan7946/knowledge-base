@@ -8,6 +8,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PYTHON = sys.executable
+SCRIPTS = ROOT / "scripts"
+WIKI_DIR = ROOT / "wiki"
+BUILD_DIR = ROOT / "build"
+DEFAULT_DOCS = "./build/docs"
+DEFAULT_VECTOR_DB = "./build/chroma_db"
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -27,10 +32,10 @@ def ensure_dirs() -> None:
     for path in [
         ROOT / "raw" / "notes",
         ROOT / "raw" / "ai",
-        ROOT / "concepts",
-        ROOT / "entities",
-        ROOT / "comparisons",
-        ROOT / "docs",
+        WIKI_DIR / "concepts",
+        WIKI_DIR / "entities",
+        WIKI_DIR / "comparisons",
+        BUILD_DIR / "docs",
     ]:
         path.mkdir(parents=True, exist_ok=True)
 
@@ -38,7 +43,7 @@ def ensure_dirs() -> None:
         "index.md": "# Knowledge Base Wiki\n\n运行 `python kb.py build-wiki` 生成索引。\n",
         "log.md": "# 构建日志\n\n",
     }.items():
-        path = ROOT / file_name
+        path = WIKI_DIR / file_name
         if not path.exists():
             path.write_text(content, encoding="utf-8")
 
@@ -50,12 +55,12 @@ def init_project(_args: argparse.Namespace) -> int:
     if not env_file.exists() and env_example.exists():
         shutil.copy2(env_example, env_file)
         print("已创建 .env，请填写 KB_API_KEY 后再构建。")
-    print("初始化完成。把 Markdown 原始笔记放入 raw/notes/，然后运行 python kb.py build-all。")
+    print("初始化完成。把 Markdown 原始笔记放入 raw/notes/，或用 kb.py add 写入 raw/ai/，然后运行 python kb.py build-all。")
     return 0
 
 
 def build_wiki(args: argparse.Namespace) -> int:
-    cmd = [PYTHON, "auto_wiki_writer.py"]
+    cmd = [PYTHON, str(SCRIPTS / "auto_wiki_writer.py")]
     if args.force:
         cmd.append("--force")
     if args.dry_run:
@@ -66,15 +71,15 @@ def build_wiki(args: argparse.Namespace) -> int:
 
 
 def prepare_docs(_args: argparse.Namespace) -> int:
-    return run([PYTHON, "prepare_wiki_docs.py"])
+    return run([PYTHON, str(SCRIPTS / "prepare_wiki_docs.py")])
 
 
 def ingest(args: argparse.Namespace) -> int:
-    return run([PYTHON, "ingest_md.py", "--source", args.source, "--persist", args.persist])
+    return run([PYTHON, str(SCRIPTS / "ingest_md.py"), "--source", args.source, "--persist", args.persist])
 
 
 def rebuild(args: argparse.Namespace) -> int:
-    return run([PYTHON, "rebuild_vectordb.py", "--source", args.source, "--persist", args.persist])
+    return run([PYTHON, str(SCRIPTS / "rebuild_vectordb.py"), "--source", args.source, "--persist", args.persist])
 
 
 def build_all(args: argparse.Namespace) -> int:
@@ -83,7 +88,7 @@ def build_all(args: argparse.Namespace) -> int:
     if code:
         return code
     if args.dry_run:
-        print("dry-run 模式已结束，未继续同步 docs 或构建向量库。")
+        print("dry-run 模式已结束，未继续同步 build/docs 或构建向量库。")
         return 0
     code = prepare_docs(args)
     if code:
@@ -92,14 +97,14 @@ def build_all(args: argparse.Namespace) -> int:
 
 
 def query(args: argparse.Namespace) -> int:
-    return run([PYTHON, "query_md.py", args.query, "-k", str(args.top_k), "-p", args.persist])
+    return run([PYTHON, str(SCRIPTS / "query_md.py"), args.query, "-k", str(args.top_k), "-p", args.persist])
 
 
 def chat(args: argparse.Namespace) -> int:
     return run(
         [
             PYTHON,
-            "chat_with_kb.py",
+            str(SCRIPTS / "chat_with_kb.py"),
             args.query,
             "-k",
             str(args.top_k),
@@ -112,7 +117,7 @@ def chat(args: argparse.Namespace) -> int:
 
 
 def add(args: argparse.Namespace) -> int:
-    cmd = [PYTHON, "add_to_kb.py", args.content]
+    cmd = [PYTHON, str(SCRIPTS / "add_to_kb.py"), args.content]
     if args.title:
         cmd.extend(["-t", args.title])
     if args.category:
@@ -136,42 +141,42 @@ def main() -> int:
 
     subparsers.add_parser("init", help="初始化目录和 .env").set_defaults(func=init_project)
 
-    p = subparsers.add_parser("build-wiki", help="从 raw 笔记生成 Wiki 层")
+    p = subparsers.add_parser("build-wiki", help="从 raw/notes 和 raw/ai 生成 wiki/ 知识图谱层")
     p.add_argument("--force", action="store_true", help="忽略状态文件，重新处理所有笔记")
     p.add_argument("--dry-run", action="store_true", help="只预览，不写入文件")
     p.add_argument("--raw-dir", action="append", help="额外指定原始笔记目录，可重复传入")
     p.set_defaults(func=build_wiki)
 
-    subparsers.add_parser("prepare-docs", help="同步 Wiki 页面到 docs/").set_defaults(func=prepare_docs)
+    subparsers.add_parser("prepare-docs", help="同步 wiki/ 页面到 build/docs/").set_defaults(func=prepare_docs)
 
-    p = subparsers.add_parser("ingest", help="构建向量库")
-    p.add_argument("--source", "-s", default="./docs")
-    p.add_argument("--persist", "-p", default="./chroma_db")
+    p = subparsers.add_parser("ingest", help="构建向量库到 build/chroma_db/")
+    p.add_argument("--source", "-s", default=DEFAULT_DOCS)
+    p.add_argument("--persist", "-p", default=DEFAULT_VECTOR_DB)
     p.set_defaults(func=ingest)
 
     p = subparsers.add_parser("rebuild", help="删除并重建向量库")
-    p.add_argument("--source", "-s", default="./docs")
-    p.add_argument("--persist", "-p", default="./chroma_db")
+    p.add_argument("--source", "-s", default=DEFAULT_DOCS)
+    p.add_argument("--persist", "-p", default=DEFAULT_VECTOR_DB)
     p.set_defaults(func=rebuild)
 
-    p = subparsers.add_parser("build-all", help="一键生成 Wiki、同步 docs 并构建向量库")
+    p = subparsers.add_parser("build-all", help="一键生成 wiki/、同步 build/docs 并构建向量库")
     p.add_argument("--force", action="store_true")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--raw-dir", action="append")
-    p.add_argument("--source", "-s", default="./docs")
-    p.add_argument("--persist", "-p", default="./chroma_db")
+    p.add_argument("--source", "-s", default=DEFAULT_DOCS)
+    p.add_argument("--persist", "-p", default=DEFAULT_VECTOR_DB)
     p.set_defaults(func=build_all)
 
     p = subparsers.add_parser("query", help="语义检索")
     p.add_argument("query")
     p.add_argument("-k", "--top-k", type=int, default=3)
-    p.add_argument("-p", "--persist", default="./chroma_db")
+    p.add_argument("-p", "--persist", default=DEFAULT_VECTOR_DB)
     p.set_defaults(func=query)
 
     p = subparsers.add_parser("chat", help="基于知识库问答")
     p.add_argument("query")
     p.add_argument("-k", "--top-k", type=int, default=3)
-    p.add_argument("-p", "--persist", default="./chroma_db")
+    p.add_argument("-p", "--persist", default=DEFAULT_VECTOR_DB)
     p.add_argument("-m", "--model", default=os.getenv("KB_LLM_MODEL", os.getenv("WIKI_LLM_MODEL", "qwen-plus")))
     p.set_defaults(func=chat)
 

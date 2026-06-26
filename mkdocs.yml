@@ -61,7 +61,7 @@ validation:
 extra:
   generator: false
 
-docs_dir: docs
-site_dir: site
+docs_dir: build/docs
+site_dir: build/site
 exclude_docs: |
   **/.generated-by-prepare-wiki-docs

@@ -1,10 +1,9 @@
 """
-Prepare MkDocs source files for the personal knowledge-base wiki.
+Prepare MkDocs source files for the generated knowledge-base wiki.
 
-The AI-organized wiki is maintained at the repository root (`index.md`,
-`concepts/`, `entities/`, `comparisons/`). MkDocs requires all served files to
-live under `docs/`, so this script creates generated copies there before
-`mkdocs serve` or `mkdocs build` runs.
+The AI-organized wiki lives under `wiki/`. MkDocs serves generated copies from
+`build/docs/`, keeping source notes, compiled wiki pages, and build artifacts
+separate.
 """
 
 from __future__ import annotations
@@ -14,11 +13,16 @@ import shutil
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent
-DOCS = ROOT / "docs"
+ROOT = Path(__file__).resolve().parent.parent
+WIKI = ROOT / "wiki"
+DOCS = ROOT / "build" / "docs"
 MARKER = ".generated-by-prepare-wiki-docs"
 
-ROOT_FILES = ["index.md", "log.md", "SCHEMA.md"]
+ROOT_MARKDOWN_FILES = [
+    (WIKI / "index.md", Path("index.md")),
+    (WIKI / "log.md", Path("log.md")),
+    (ROOT / "SCHEMA.md", Path("SCHEMA.md")),
+]
 WIKI_DIRS = ["concepts", "entities", "comparisons"]
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]")
 
@@ -30,12 +34,12 @@ def normalize_name(value: str) -> str:
 def build_page_index() -> dict[str, Path]:
     index: dict[str, Path] = {}
     for dirname in WIKI_DIRS:
-        source_dir = ROOT / dirname
+        source_dir = WIKI / dirname
         if not source_dir.exists():
             continue
 
         for path in source_dir.rglob("*.md"):
-            relative = path.relative_to(ROOT).as_posix()
+            relative = path.relative_to(WIKI).as_posix()
             keys = {
                 path.stem,
                 path.stem.lower(),
@@ -73,13 +77,10 @@ def convert_wikilinks(text: str, output_path: Path, page_index: dict[str, Path])
 
             source_dir = output_path.parent
             target_path = DOCS / page
-            href = Path(
-                re.sub(
-                    r"\\",
-                    "/",
-                    str(target_path.relative_to(source_dir) if target_path.is_relative_to(source_dir) else Path("..") / target_path.relative_to(DOCS)),
-                )
-            ).as_posix()
+            try:
+                href = target_path.relative_to(source_dir).as_posix()
+            except ValueError:
+                href = (Path("..") / target_path.relative_to(DOCS)).as_posix()
 
         if anchor:
             href = f"{href}#{markdown_anchor(anchor)}"
@@ -107,14 +108,13 @@ def write_markdown(source: Path, target: Path, page_index: dict[str, Path]) -> N
     target.write_text(text, encoding="utf-8")
 
 
-def sync_file(source_name: str, page_index: dict[str, Path]) -> None:
-    source = ROOT / source_name
+def sync_file(source: Path, target_relative: Path, page_index: dict[str, Path]) -> None:
     if source.exists():
-        write_markdown(source, DOCS / source_name, page_index)
+        write_markdown(source, DOCS / target_relative, page_index)
 
 
 def sync_dir(dirname: str, page_index: dict[str, Path]) -> None:
-    source_dir = ROOT / dirname
+    source_dir = WIKI / dirname
     target_dir = DOCS / dirname
     if not source_dir.exists():
         return
@@ -133,16 +133,16 @@ def sync_dir(dirname: str, page_index: dict[str, Path]) -> None:
 
 
 def main() -> None:
-    DOCS.mkdir(exist_ok=True)
+    DOCS.mkdir(parents=True, exist_ok=True)
     page_index = build_page_index()
 
-    for source_name in ROOT_FILES:
-        sync_file(source_name, page_index)
+    for source, target_relative in ROOT_MARKDOWN_FILES:
+        sync_file(source, target_relative, page_index)
 
     for dirname in WIKI_DIRS:
         sync_dir(dirname, page_index)
 
-    print("Wiki docs prepared under docs/.")
+    print("Wiki docs prepared under build/docs/.")
 
 
 if __name__ == "__main__":

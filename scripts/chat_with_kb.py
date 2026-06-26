@@ -14,8 +14,15 @@ load_dotenv()
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-ROOT = Path(__file__).resolve().parent
-SYSTEM_SOURCES = {"docs/log.md", "docs/index.md", "docs/SCHEMA.md"}
+ROOT = Path(__file__).resolve().parent.parent
+SYSTEM_SOURCES = {
+    "build/docs/log.md",
+    "build/docs/index.md",
+    "build/docs/SCHEMA.md",
+    "docs/log.md",
+    "docs/index.md",
+    "docs/SCHEMA.md",
+}
 
 
 def resolve_path(value: str | Path) -> Path:
@@ -41,9 +48,18 @@ def infer_source_layer(source: str) -> str:
     source = normalize_source(source)
     if source in SYSTEM_SOURCES:
         return "system"
-    if source.startswith(("docs/concepts/", "docs/entities/", "docs/comparisons/")):
+    if source.startswith(
+        (
+            "build/docs/concepts/",
+            "build/docs/entities/",
+            "build/docs/comparisons/",
+            "docs/concepts/",
+            "docs/entities/",
+            "docs/comparisons/",
+        )
+    ):
         return "wiki"
-    if source.startswith("docs/"):
+    if source.startswith(("build/docs/", "docs/")):
         return "raw-note-mirror"
     return "unknown"
 
@@ -167,7 +183,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="基于知识库的 RAG 问答")
     parser.add_argument("query", help="问题")
     parser.add_argument("-k", "--top_k", type=int, default=3, help="检索结果数量")
-    parser.add_argument("-p", "--persist", default="./chroma_db", help="向量库目录")
+    parser.add_argument("-p", "--persist", default="./build/chroma_db", help="向量库目录")
     parser.add_argument("-m", "--model", default=os.getenv("KB_LLM_MODEL", os.getenv("WIKI_LLM_MODEL", "qwen-plus")))
     args = parser.parse_args()
     chat_with_kb(args.query, args.persist, args.top_k, args.model)

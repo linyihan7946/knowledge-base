@@ -15,8 +15,16 @@ load_dotenv()
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-ROOT = Path(__file__).resolve().parent
-SYSTEM_SOURCES = {"docs/log.md", "docs/index.md", "docs/SCHEMA.md"}
+ROOT = Path(__file__).resolve().parent.parent
+DOCS_PREFIXES = ("build/docs/", "docs/")
+SYSTEM_SOURCES = {
+    "build/docs/log.md",
+    "build/docs/index.md",
+    "build/docs/SCHEMA.md",
+    "docs/log.md",
+    "docs/index.md",
+    "docs/SCHEMA.md",
+}
 
 
 def resolve_path(value: str | Path) -> Path:
@@ -48,9 +56,18 @@ def embedding_model() -> str:
 def classify_source_layer(source: str) -> str:
     if source in SYSTEM_SOURCES:
         return "system"
-    if source.startswith(("docs/concepts/", "docs/entities/", "docs/comparisons/")):
+    if source.startswith(
+        (
+            "build/docs/concepts/",
+            "build/docs/entities/",
+            "build/docs/comparisons/",
+            "docs/concepts/",
+            "docs/entities/",
+            "docs/comparisons/",
+        )
+    ):
         return "wiki"
-    if source.startswith("docs/"):
+    if source.startswith(DOCS_PREFIXES):
         return "raw-note-mirror"
     return "unknown"
 
@@ -112,8 +129,8 @@ def ingest_markdown(source_dir: str, persist_dir: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Markdown 向量化入库")
-    parser.add_argument("--source", "-s", default="./docs", help="Markdown 文档目录")
-    parser.add_argument("--persist", "-p", default="./chroma_db", help="ChromaDB 保存目录")
+    parser.add_argument("--source", "-s", default="./build/docs", help="Markdown 文档目录")
+    parser.add_argument("--persist", "-p", default="./build/chroma_db", help="ChromaDB 保存目录")
     args = parser.parse_args()
     ingest_markdown(args.source, args.persist)
     return 0

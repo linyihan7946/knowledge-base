@@ -17,9 +17,9 @@ load_dotenv()
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 AI_RAW_DIR = ROOT / "raw" / "ai"
-PERSIST_DIRECTORY = ROOT / "chroma_db"
+PERSIST_DIRECTORY = ROOT / "build" / "chroma_db"
 
 
 def api_key() -> str | None:

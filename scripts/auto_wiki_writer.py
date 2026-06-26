@@ -17,15 +17,16 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
-ROOT = Path(__file__).resolve().parent
-CONCEPTS_DIR = ROOT / "concepts"
-ENTITIES_DIR = ROOT / "entities"
-COMPARISONS_DIR = ROOT / "comparisons"
-INDEX_FILE = ROOT / "index.md"
-LOG_FILE = ROOT / "log.md"
-STATE_FILE = ROOT / ".wiki_state.json"
+ROOT = Path(__file__).resolve().parent.parent
+WIKI_DIR = ROOT / "wiki"
+CONCEPTS_DIR = WIKI_DIR / "concepts"
+ENTITIES_DIR = WIKI_DIR / "entities"
+COMPARISONS_DIR = WIKI_DIR / "comparisons"
+INDEX_FILE = WIKI_DIR / "index.md"
+LOG_FILE = WIKI_DIR / "log.md"
+STATE_FILE = WIKI_DIR / ".wiki_state.json"
 
-DEFAULT_RAW_DIRS = ["raw/notes", "raw/ai", "raw/mubu"]
+DEFAULT_RAW_DIRS = ["raw/notes", "raw/ai"]
 LLM_MODEL = os.getenv("KB_LLM_MODEL", os.getenv("WIKI_LLM_MODEL", "qwen-plus"))
 MAX_INPUT_CHARS = int(os.getenv("WIKI_MAX_INPUT_CHARS", "12000"))
 MAX_TOKENS = int(os.getenv("WIKI_MAX_TOKENS", "8000"))
@@ -68,7 +69,7 @@ def compute_sha256(file_path: Path) -> str:
 
 def load_state() -> dict[str, str]:
     if STATE_FILE.exists():
-        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        return json.loads(STATE_FILE.read_text(encoding="utf-8-sig"))
     return {}
 
 
@@ -262,7 +263,7 @@ def main() -> int:
     raw_files = [resolve_path(args.file)] if args.file else iter_raw_files(raw_dirs)
 
     if not raw_files:
-        print("未找到原始 Markdown 笔记。请把文件放入 raw/notes/ 后重试。")
+        print("未找到原始 Markdown 笔记。请把文件放入 raw/notes/，或用 kb.py add 写入 raw/ai/ 后重试。")
         return 0
 
     print(f"找到 {len(raw_files)} 个原始笔记。")
