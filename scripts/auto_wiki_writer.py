@@ -3,7 +3,10 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -30,12 +33,8 @@ DEFAULT_RAW_DIRS = ["raw/notes", "raw/ai"]
 LLM_MODEL = os.getenv("KB_LLM_MODEL", os.getenv("WIKI_LLM_MODEL", "qwen-plus"))
 MAX_INPUT_CHARS = int(os.getenv("WIKI_MAX_INPUT_CHARS", "12000"))
 MAX_TOKENS = int(os.getenv("WIKI_MAX_TOKENS", "8000"))
-
-
-def env_raw_dirs() -> list[Path]:
-    value = os.getenv("WIKI_RAW_DIRS")
-    raw_dirs = value.split(";") if value else DEFAULT_RAW_DIRS
-    return [resolve_path(item) for item in raw_dirs if item.strip()]
+DEFAULT_WORKERS = int(os.getenv("WIKI_WORKERS", "4"))
+WORKER_TIMEOUT = int(os.getenv("WIKI_WORKER_TIMEOUT", "180"))
 
 
 def resolve_path(value: str | Path) -> Path:
@@ -50,6 +49,12 @@ def relative_to_root(path: Path) -> str:
         return path.relative_to(ROOT).as_posix()
     except ValueError:
         return path.as_posix()
+
+
+def env_raw_dirs() -> list[Path]:
+    value = os.getenv("WIKI_RAW_DIRS")
+    raw_dirs = value.split(";") if value else DEFAULT_RAW_DIRS
+    return [resolve_path(item) for item in raw_dirs if item.strip()]
 
 
 def ensure_dirs(raw_dirs: list[Path]) -> None:
@@ -137,6 +142,9 @@ def call_llm_extract(content: str, source_file: str, dry_run: bool = False) -> l
             }
         ]
 
+    from langchain_core.messages import HumanMessage, SystemMessage
+    from langchain_openai import ChatOpenAI
+
     today = datetime.now().strftime("%Y-%m-%d")
     system_prompt = f"""你是一个知识库整理助手。请从原始 Markdown 笔记中提取值得独立成页的概念、实体或比较页。
 
@@ -165,16 +173,14 @@ sources: ["{source_file}"]
 
 {content[:MAX_INPUT_CHARS]}
 """
-
-    from langchain_core.messages import HumanMessage, SystemMessage
-    from langchain_openai import ChatOpenAI
-
     llm = ChatOpenAI(
         model=LLM_MODEL,
         api_key=api_key(),
         base_url=base_url(),
         temperature=0.2,
         max_tokens=MAX_TOKENS,
+        timeout=120,
+        max_retries=1,
     )
     response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)])
     return extract_json(str(response.content))
@@ -246,13 +252,103 @@ def update_log(message: str) -> None:
         file.write(f"- [{timestamp}] {message}\n")
 
 
+def process_raw_file(raw_file: Path, dry_run: bool) -> dict:
+    rel_path = relative_to_root(raw_file)
+    current_sha = compute_sha256(raw_file)
+    content = read_raw_file(raw_file)
+
+    if len(content) < 100:
+        return {"status": "short", "rel_path": rel_path, "sha": current_sha, "pages": []}
+
+    pages = call_llm_extract(content, rel_path, dry_run=dry_run)
+    if not pages:
+        return {"status": "empty", "rel_path": rel_path, "sha": current_sha, "pages": []}
+
+    return {"status": "ok", "rel_path": rel_path, "sha": current_sha, "pages": pages}
+
+
+def process_raw_file_in_subprocess(raw_file: Path, dry_run: bool, timeout_seconds: int) -> dict:
+    if dry_run:
+        return process_raw_file(raw_file, dry_run=True)
+
+    rel_path = relative_to_root(raw_file)
+    current_sha = compute_sha256(raw_file)
+    output_path = Path(tempfile.gettempdir()) / f"kb-wiki-worker-{os.getpid()}-{abs(hash(raw_file.as_posix()))}.json"
+    if output_path.exists():
+        output_path.unlink()
+
+    env = os.environ.copy()
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "--worker-file",
+        str(raw_file),
+        "--worker-output",
+        str(output_path),
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "error",
+            "rel_path": rel_path,
+            "sha": current_sha,
+            "pages": [],
+            "error": f"worker timeout after {timeout_seconds}s",
+        }
+
+    if completed.returncode != 0:
+        stderr = (completed.stderr or completed.stdout or "").strip()
+        return {
+            "status": "error",
+            "rel_path": rel_path,
+            "sha": current_sha,
+            "pages": [],
+            "error": stderr[-500:] or f"worker exited with {completed.returncode}",
+        }
+
+    if not output_path.exists():
+        return {
+            "status": "error",
+            "rel_path": rel_path,
+            "sha": current_sha,
+            "pages": [],
+            "error": "worker did not write output",
+        }
+
+    try:
+        return json.loads(output_path.read_text(encoding="utf-8-sig"))
+    finally:
+        output_path.unlink(missing_ok=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="从原始 Markdown 笔记生成结构化 Wiki")
     parser.add_argument("--dry-run", action="store_true", help="预览处理结果，不写入文件")
     parser.add_argument("--file", help="只处理指定 Markdown 文件")
     parser.add_argument("--force", action="store_true", help="忽略状态文件，重新处理所有笔记")
     parser.add_argument("--raw-dir", action="append", help="额外指定原始笔记目录，可重复传入")
+    parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS, help="并发处理文件数量")
+    parser.add_argument("--worker-timeout", type=int, default=WORKER_TIMEOUT, help="单文件子进程超时秒数")
+    parser.add_argument("--worker-file", help=argparse.SUPPRESS)
+    parser.add_argument("--worker-output", help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.worker_file:
+        result = process_raw_file(resolve_path(args.worker_file), dry_run=False)
+        if not args.worker_output:
+            print(json.dumps(result, ensure_ascii=False))
+        else:
+            Path(args.worker_output).write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+        return 0
 
     raw_dirs = env_raw_dirs()
     if args.raw_dir:
@@ -266,58 +362,91 @@ def main() -> int:
         print("未找到原始 Markdown 笔记。请把文件放入 raw/notes/，或用 kb.py add 写入 raw/ai/ 后重试。")
         return 0
 
-    print(f"找到 {len(raw_files)} 个原始笔记。")
-    processed_count = 0
-    page_count = 0
-
+    pending_files = []
     for raw_file in raw_files:
         if not raw_file.exists():
             print(f"跳过不存在的文件：{raw_file}")
             continue
-
         rel_path = relative_to_root(raw_file)
         current_sha = compute_sha256(raw_file)
         if not args.force and state.get(rel_path) == current_sha:
             continue
+        pending_files.append(raw_file)
 
-        content = read_raw_file(raw_file)
-        if len(content) < 100:
-            print(f"跳过短笔记：{rel_path}")
-            if not args.dry_run:
-                state[rel_path] = current_sha
-                save_state(state)
-                update_log(f"跳过短笔记：{rel_path}")
-            continue
-
-        print(f"处理：{rel_path}")
-        try:
-            pages = call_llm_extract(content, rel_path, dry_run=args.dry_run)
-        except Exception as exc:
-            print(f"处理失败：{rel_path}，原因：{exc}")
-            continue
-
-        if not pages:
-            print(f"未提取到页面：{rel_path}")
-            if not args.dry_run:
-                state[rel_path] = current_sha
-                save_state(state)
-                update_log(f"未提取到页面：{rel_path}")
-            continue
-
-        print(f"提取 {len(pages)} 个页面。")
+    print(f"原始笔记：{len(raw_files)} 个；待处理：{len(pending_files)} 个；并发：{max(1, args.workers)}")
+    if not pending_files:
         if not args.dry_run:
-            for page in pages:
-                target = write_wiki_page(page, rel_path)
-                print(f"  写入：{relative_to_root(target)}")
-                page_count += 1
-            state[rel_path] = current_sha
-            save_state(state)
             update_index()
-            update_log(f"整理笔记：{rel_path} -> {len(pages)} 个页面")
-        processed_count += 1
+        print("没有需要处理的文件。")
+        return 0
 
-    if not args.dry_run:
-        save_state(state)
+    processed_count = 0
+    page_count = 0
+    index_dirty = False
+
+    workers = max(1, args.workers)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(process_raw_file_in_subprocess, raw_file, args.dry_run, args.worker_timeout): raw_file
+            for raw_file in pending_files
+        }
+        for future in as_completed(futures):
+            raw_file = futures[future]
+            rel_path = relative_to_root(raw_file)
+            try:
+                result = future.result()
+            except Exception as exc:
+                print(f"处理失败：{rel_path}，原因：{exc}")
+                continue
+
+            status = result["status"]
+            rel_path = result["rel_path"]
+            current_sha = result["sha"]
+            pages = result["pages"]
+
+            if status == "short":
+                print(f"跳过短笔记：{rel_path}")
+                if not args.dry_run:
+                    state[rel_path] = current_sha
+                    update_log(f"跳过短笔记：{rel_path}")
+                    save_state(state)
+                continue
+
+            if status == "empty":
+                print(f"未提取到页面：{rel_path}")
+                if not args.dry_run:
+                    state[rel_path] = current_sha
+                    update_log(f"未提取到页面：{rel_path}")
+                    save_state(state)
+                processed_count += 1
+                continue
+
+            if status == "error":
+                error = result.get("error", "unknown error")
+                print(f"处理失败，已跳过：{rel_path}，原因：{error}")
+                if not args.dry_run:
+                    state[rel_path] = current_sha
+                    update_log(f"处理失败，已跳过：{rel_path}，原因：{error}")
+                    save_state(state)
+                processed_count += 1
+                continue
+
+            print(f"处理完成：{rel_path} -> {len(pages)} 个页面")
+            if not args.dry_run:
+                for page in pages:
+                    target = write_wiki_page(page, rel_path)
+                    print(f"  写入：{relative_to_root(target)}")
+                    page_count += 1
+                state[rel_path] = current_sha
+                update_log(f"整理笔记：{rel_path} -> {len(pages)} 个页面")
+                save_state(state)
+                index_dirty = True
+                if processed_count % 10 == 0:
+                    update_index()
+                    index_dirty = False
+            processed_count += 1
+
+    if not args.dry_run and index_dirty:
         update_index()
 
     print(f"完成：处理 {processed_count} 个文件，生成/更新 {page_count} 个页面。")
