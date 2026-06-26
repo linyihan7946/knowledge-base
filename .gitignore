@@ -25,7 +25,12 @@ log.md
 .wiki_state.json
 
 # Raw user notes (private by default)
-raw/
+raw/**
+!raw/
+!raw/notes/
+!raw/notes/.gitkeep
+!raw/ai/
+!raw/ai/.gitkeep
 
 # OS
 .DS_Store
