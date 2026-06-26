@@ -1,23 +1,34 @@
-import os
-import shutil
 import argparse
+import shutil
+from pathlib import Path
+
 from ingest_md import ingest_markdown
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="重新生成向量库")
-    parser.add_argument("--source", "-s", default="./docs", help="Markdown 文件目录")
-    parser.add_argument("--persist", "-p", default="./chroma_db", help="向量库保存目录")
 
+ROOT = Path(__file__).resolve().parent
+
+
+def resolve_path(value: str | Path) -> Path:
+    path = Path(value)
+    if not path.is_absolute():
+        path = ROOT / path
+    return path
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="删除并重建 ChromaDB 向量库")
+    parser.add_argument("--source", "-s", default="./docs", help="Markdown 文档目录")
+    parser.add_argument("--persist", "-p", default="./chroma_db", help="向量库目录")
     args = parser.parse_args()
 
-    SOURCE_DIRECTORY = args.source
-    PERSIST_DIRECTORY = args.persist
+    persist_path = resolve_path(args.persist)
+    if persist_path.exists():
+        print(f"删除旧向量库：{persist_path}")
+        shutil.rmtree(persist_path)
 
-    # 删除旧的向量库
-    if os.path.exists(PERSIST_DIRECTORY):
-        print(f"正在删除旧的向量库: {PERSIST_DIRECTORY}")
-        shutil.rmtree(PERSIST_DIRECTORY)
-        print("删除完成！")
+    ingest_markdown(args.source, args.persist)
+    return 0
 
-    # 重新生成向量库
-    ingest_markdown(SOURCE_DIRECTORY, PERSIST_DIRECTORY)
+
+if __name__ == "__main__":
+    raise SystemExit(main())

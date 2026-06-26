@@ -12,18 +12,18 @@ chroma_db/
 # Models
 models/
 
-# Docs
+# Generated knowledge content
 docs/
 site/
 concepts/
 entities/
+comparisons/
 index.md
 log.md
 .wiki_state.json
 
-# Raw notes (immutable source material - never commit)
-raw/mubu/
-raw/ai/
+# Raw user notes (private by default)
+raw/
 
 # OS
 .DS_Store

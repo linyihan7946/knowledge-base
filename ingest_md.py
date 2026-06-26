@@ -1,119 +1,123 @@
+import argparse
 import os
-from dotenv import load_dotenv
-from langchain_community.document_loaders import (
-    DirectoryLoader,
-    TextLoader,
-)
-from langchain_text_splitters import MarkdownTextSplitter
-from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import Chroma
+import sys
+from pathlib import Path
 
-# 加载.env环境变量
+from dotenv import load_dotenv
+from langchain_community.vectorstores import Chroma
+from langchain_core.documents import Document
+from langchain_openai import OpenAIEmbeddings
+from langchain_text_splitters import MarkdownTextSplitter
+
+
 load_dotenv()
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+ROOT = Path(__file__).resolve().parent
 SYSTEM_SOURCES = {"docs/log.md", "docs/index.md", "docs/SCHEMA.md"}
 
 
-def normalize_source_path(source: str) -> str:
-    if not source:
-        return "unknown"
+def resolve_path(value: str | Path) -> Path:
+    path = Path(value)
+    if not path.is_absolute():
+        path = ROOT / path
+    return path
 
+
+def relative_to_root(path: Path) -> str:
     try:
-        source = os.path.relpath(source, start=os.getcwd())
+        return path.relative_to(ROOT).as_posix()
     except ValueError:
-        pass
-    return source.replace("\\", "/")
+        return path.as_posix()
+
+
+def api_key() -> str | None:
+    return os.getenv("KB_API_KEY") or os.getenv("DASHSCOPE_API_KEY") or os.getenv("OPENAI_API_KEY")
+
+
+def base_url() -> str | None:
+    return os.getenv("KB_BASE_URL") or os.getenv("DASHSCOPE_BASE_URL") or os.getenv("OPENAI_BASE_URL")
+
+
+def embedding_model() -> str:
+    return os.getenv("KB_EMBEDDING_MODEL", "text-embedding-v3")
 
 
 def classify_source_layer(source: str) -> str:
-    normalized = normalize_source_path(source)
-    if normalized in SYSTEM_SOURCES:
+    if source in SYSTEM_SOURCES:
         return "system"
-    if normalized.startswith(("docs/concepts/", "docs/entities/", "docs/comparisons/")):
+    if source.startswith(("docs/concepts/", "docs/entities/", "docs/comparisons/")):
         return "wiki"
-    if normalized.startswith("docs/"):
+    if source.startswith("docs/"):
         return "raw-note-mirror"
     return "unknown"
 
 
-def get_embeddings():
-    """获取阿里百炼embedding模型"""
-    api_key = os.environ.get("DASHSCOPE_API_KEY")
-    base_url = os.environ.get(
-        "DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    )
-
-    print("加载text-embedding-v3模型...")
-    embeddings = OpenAIEmbeddings(
-        model="text-embedding-v3",
-        api_key=api_key,
-        base_url=base_url,
+def get_embeddings() -> OpenAIEmbeddings:
+    return OpenAIEmbeddings(
+        model=embedding_model(),
+        api_key=api_key(),
+        base_url=base_url(),
         chunk_size=10,
         check_embedding_ctx_length=False,
     )
-    print("成功加载text-embedding-v3模型！")
-    return embeddings
 
 
-def ingest_markdown(source_dir: str, persist_dir: str):
-    # 1. 递归加载所有 .md 文件
-    print(f"正在加载目录 {source_dir} 下的 Markdown 文件...")
-    loader = DirectoryLoader(
-        source_dir,
-        glob="**/*.md",
-        loader_cls=TextLoader,
-        loader_kwargs={"encoding": "utf-8"},
-        show_progress=True,
-    )
-    documents = loader.load()
-    print(f"加载完成，共计 {len(documents)} 个文件。")
+def load_markdown_documents(source_dir: Path) -> list[Document]:
+    documents: list[Document] = []
+    for path in sorted(source_dir.rglob("*.md")):
+        text = path.read_text(encoding="utf-8").strip()
+        if not text:
+            continue
+        source = relative_to_root(path)
+        documents.append(
+            Document(
+                page_content=text,
+                metadata={"source": source, "source_layer": classify_source_layer(source)},
+            )
+        )
+    return documents
 
-    # 2. 文本分段 (针对 Markdown 优化)
-    print("正在对文档进行分段...")
-    text_splitter = MarkdownTextSplitter(chunk_size=1500, chunk_overlap=200)
-    texts = text_splitter.split_documents(documents)
-    print(f"分段完成，产生 {len(texts)} 个文本块。")
 
-    # 3. 清理文本内容
-    print("正在清理文本内容...")
-    cleaned_documents = []
-    for doc in texts:
-        content = str(doc.page_content).strip()
-        if content and len(content) > 10:
-            doc.page_content = content
-            source = normalize_source_path(doc.metadata.get("source", ""))
-            doc.metadata["source"] = source
-            doc.metadata["source_layer"] = classify_source_layer(source)
-            cleaned_documents.append(doc)
-    cleaned_texts = cleaned_documents
-    print(f"有效文本块: {len(cleaned_texts)} 个。")
+def ingest_markdown(source_dir: str, persist_dir: str) -> None:
+    source_path = resolve_path(source_dir)
+    persist_path = resolve_path(persist_dir)
+    source_path.mkdir(parents=True, exist_ok=True)
 
-    # 4. 初始化 Embedding 模型
-    print("正在初始化 Embedding 模型...")
-    embeddings = get_embeddings()
+    print(f"加载 Markdown 目录：{relative_to_root(source_path)}")
+    documents = load_markdown_documents(source_path)
+    if not documents:
+        print("未找到可入库的 Markdown 文件。")
+        return
 
-    # 5. 直接使用from_texts创建向量库
-    print("正在生成向量并存入数据库...")
+    splitter = MarkdownTextSplitter(chunk_size=1500, chunk_overlap=200)
+    chunks = splitter.split_documents(documents)
+    chunks = [chunk for chunk in chunks if chunk.page_content.strip()]
+    if not chunks:
+        print("Markdown 文件为空，未生成向量块。")
+        return
+
+    print(f"文件数：{len(documents)}，文本块：{len(chunks)}")
     vector_db = Chroma.from_documents(
-        documents=cleaned_documents, embedding=embeddings, persist_directory=persist_dir
+        documents=chunks,
+        embedding=get_embeddings(),
+        persist_directory=str(persist_path),
     )
-    print(f"处理完成！数据库已保存至: {persist_dir}")
+    if hasattr(vector_db, "persist"):
+        vector_db.persist()
+    print(f"向量库已保存：{relative_to_root(persist_path)}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Markdown 向量化入库")
+    parser.add_argument("--source", "-s", default="./docs", help="Markdown 文档目录")
+    parser.add_argument("--persist", "-p", default="./chroma_db", help="ChromaDB 保存目录")
+    args = parser.parse_args()
+    ingest_markdown(args.source, args.persist)
+    return 0
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Markdown 文件向量化入库工具")
-    parser.add_argument("--source", "-s", default="./docs", help="Markdown 文件目录")
-    parser.add_argument("--persist", "-p", default="./chroma_db", help="向量库保存目录")
-
-    args = parser.parse_args()
-
-    SOURCE_DIRECTORY = args.source
-    PERSIST_DIRECTORY = args.persist
-
-    # 确保目录存在
-    if not os.path.exists(SOURCE_DIRECTORY):
-        os.makedirs(SOURCE_DIRECTORY)
-        print(f"请将你的 .md 文件放入 {SOURCE_DIRECTORY} 目录后再次运行。")
-    else:
-        ingest_markdown(SOURCE_DIRECTORY, PERSIST_DIRECTORY)
+    raise SystemExit(main())

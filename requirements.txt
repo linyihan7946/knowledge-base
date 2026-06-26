@@ -1,0 +1,9 @@
+langchain>=0.2.0
+langchain-community>=0.2.0
+langchain-openai>=0.1.0
+langchain-text-splitters>=0.2.0
+chromadb>=0.5.0
+python-dotenv>=1.0.0
+mkdocs>=1.6.0
+mkdocs-material>=9.5.0
+pymdown-extensions>=10.8.0
