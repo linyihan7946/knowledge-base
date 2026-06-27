@@ -1,5 +1,6 @@
 import argparse
 import hashlib
+import html
 import json
 import os
 import re
@@ -35,6 +36,7 @@ MAX_INPUT_CHARS = int(os.getenv("WIKI_MAX_INPUT_CHARS", "12000"))
 MAX_TOKENS = int(os.getenv("WIKI_MAX_TOKENS", "8000"))
 DEFAULT_WORKERS = int(os.getenv("WIKI_WORKERS", "4"))
 WORKER_TIMEOUT = int(os.getenv("WIKI_WORKER_TIMEOUT", "180"))
+LLM_TIMEOUT = int(os.getenv("WIKI_LLM_TIMEOUT", "120"))
 
 
 def resolve_path(value: str | Path) -> Path:
@@ -129,6 +131,62 @@ def extract_json(text: str) -> list[dict]:
     return []
 
 
+def clean_markdown_fragment(content: str) -> str:
+    content = html.unescape(content)
+    content = re.sub(r"</?span(?:\s+[^>]*)?>", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"<br\s*/?>", "\n", content, flags=re.IGNORECASE)
+    content = re.sub(r"</?p(?:\s+[^>]*)?>", "\n", content, flags=re.IGNORECASE)
+    content = re.sub(r"<[^>]+>", "", content)
+    content = re.sub(r"[ \t]+\n", "\n", content)
+    content = re.sub(r"\n{3,}", "\n\n", content)
+    return content.strip()
+
+
+def is_probably_mojibake(content: str) -> bool:
+    if not content:
+        return False
+    suspicious = len(re.findall(r"[�銝蝞嚗瘙撠摨餈憭閫雿蝢蝚敹頝璆霈隞]", content))
+    chinese = len(re.findall(r"[\u4e00-\u9fff]", content))
+    return suspicious >= 20 and suspicious > chinese * 0.25
+
+
+def fallback_page_from_raw(
+    raw_file: Path,
+    content: str,
+    source_file: str,
+    reason: str,
+) -> dict:
+    title = raw_file.stem
+    today = datetime.now().strftime("%Y-%m-%d")
+    cleaned = clean_markdown_fragment(content)
+    if not cleaned:
+        cleaned = "_原始笔记为空，无法整理内容。_"
+
+    content_md = (
+        "---\n"
+        f"title: {title}\n"
+        f"created: {today}\n"
+        f"updated: {today}\n"
+        "type: entity\n"
+        "tags: [travel, source-note, fallback]\n"
+        f"sources: [\"{source_file}\"]\n"
+        "---\n\n"
+        f"# {title}\n\n"
+        "> 本页由原始笔记自动生成，用于保证该来源能进入 wiki 层。\n\n"
+        f"> 触发原因：{reason}\n\n"
+        "## 原始笔记整理\n\n"
+        f"{cleaned}\n"
+    )
+    return {
+        "type": "entity",
+        "title": title,
+        "slug": slugify(title),
+        "tags": ["travel", "source-note", "fallback"],
+        "sources": [source_file],
+        "content": content_md,
+    }
+
+
 def call_llm_extract(content: str, source_file: str, dry_run: bool = False) -> list[dict]:
     if dry_run:
         return [
@@ -179,7 +237,7 @@ sources: ["{source_file}"]
         base_url=base_url(),
         temperature=0.2,
         max_tokens=MAX_TOKENS,
-        timeout=120,
+        timeout=LLM_TIMEOUT,
         max_retries=1,
     )
     response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)])
@@ -260,9 +318,37 @@ def process_raw_file(raw_file: Path, dry_run: bool) -> dict:
     if len(content) < 100:
         return {"status": "short", "rel_path": rel_path, "sha": current_sha, "pages": []}
 
-    pages = call_llm_extract(content, rel_path, dry_run=dry_run)
+    try:
+        pages = call_llm_extract(content, rel_path, dry_run=dry_run)
+    except Exception as exc:
+        if is_probably_mojibake(content):
+            return {
+                "status": "empty",
+                "rel_path": rel_path,
+                "sha": current_sha,
+                "pages": [],
+                "error": "source appears to be mojibake",
+            }
+        fallback = fallback_page_from_raw(raw_file, content, rel_path, f"LLM 抽取失败：{type(exc).__name__}")
+        return {
+            "status": "fallback",
+            "rel_path": rel_path,
+            "sha": current_sha,
+            "pages": [fallback],
+            "error": str(exc)[-500:],
+        }
+
     if not pages:
-        return {"status": "empty", "rel_path": rel_path, "sha": current_sha, "pages": []}
+        if is_probably_mojibake(content):
+            return {
+                "status": "empty",
+                "rel_path": rel_path,
+                "sha": current_sha,
+                "pages": [],
+                "error": "source appears to be mojibake",
+            }
+        fallback = fallback_page_from_raw(raw_file, content, rel_path, "LLM 未提取到结构化页面")
+        return {"status": "fallback", "rel_path": rel_path, "sha": current_sha, "pages": [fallback]}
 
     return {"status": "ok", "rel_path": rel_path, "sha": current_sha, "pages": pages}
 
@@ -297,21 +383,35 @@ def process_raw_file_in_subprocess(raw_file: Path, dry_run: bool, timeout_second
             timeout=timeout_seconds,
         )
     except subprocess.TimeoutExpired:
+        content = read_raw_file(raw_file)
+        fallback = fallback_page_from_raw(
+            raw_file,
+            content,
+            rel_path,
+            f"worker timeout after {timeout_seconds}s",
+        )
         return {
-            "status": "error",
+            "status": "fallback",
             "rel_path": rel_path,
             "sha": current_sha,
-            "pages": [],
+            "pages": [fallback],
             "error": f"worker timeout after {timeout_seconds}s",
         }
 
     if completed.returncode != 0:
         stderr = (completed.stderr or completed.stdout or "").strip()
+        content = read_raw_file(raw_file)
+        fallback = fallback_page_from_raw(
+            raw_file,
+            content,
+            rel_path,
+            stderr[-200:] or f"worker exited with {completed.returncode}",
+        )
         return {
-            "status": "error",
+            "status": "fallback",
             "rel_path": rel_path,
             "sha": current_sha,
-            "pages": [],
+            "pages": [fallback],
             "error": stderr[-500:] or f"worker exited with {completed.returncode}",
         }
 
@@ -355,7 +455,7 @@ def main() -> int:
         raw_dirs.extend(resolve_path(path) for path in args.raw_dir)
     ensure_dirs(raw_dirs)
 
-    state = {} if args.force else load_state()
+    state = load_state()
     raw_files = [resolve_path(args.file)] if args.file else iter_raw_files(raw_dirs)
 
     if not raw_files:
@@ -413,10 +513,12 @@ def main() -> int:
                 continue
 
             if status == "empty":
-                print(f"未提取到页面：{rel_path}")
+                error = result.get("error")
+                suffix = f"，原因：{error}" if error else ""
+                print(f"未提取到页面：{rel_path}{suffix}")
                 if not args.dry_run:
                     state[rel_path] = current_sha
-                    update_log(f"未提取到页面：{rel_path}")
+                    update_log(f"未提取到页面：{rel_path}{suffix}")
                     save_state(state)
                 processed_count += 1
                 continue
@@ -425,9 +527,24 @@ def main() -> int:
                 error = result.get("error", "unknown error")
                 print(f"处理失败，已跳过：{rel_path}，原因：{error}")
                 if not args.dry_run:
-                    state[rel_path] = current_sha
                     update_log(f"处理失败，已跳过：{rel_path}，原因：{error}")
                     save_state(state)
+                processed_count += 1
+                continue
+
+            if status == "fallback":
+                error = result.get("error")
+                suffix = f"，原因：{error}" if error else ""
+                print(f"使用原始笔记兜底生成：{rel_path} -> {len(pages)} 个页面{suffix}")
+                if not args.dry_run:
+                    for page in pages:
+                        target = write_wiki_page(page, rel_path)
+                        print(f"  写入：{relative_to_root(target)}")
+                        page_count += 1
+                    state[rel_path] = current_sha
+                    update_log(f"兜底整理笔记：{rel_path} -> {len(pages)} 个页面")
+                    save_state(state)
+                    index_dirty = True
                 processed_count += 1
                 continue
 
