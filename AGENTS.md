@@ -139,7 +139,7 @@ python kb.py serve
 ```env
 KB_API_KEY=your_api_key
 KB_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-KB_LLM_MODEL=qwen3.6-plus
+KB_LLM_MODEL=qwen-plus
 KB_EMBEDDING_MODEL=text-embedding-v3
 WIKI_RAW_DIRS=raw/notes;raw/ai
 ```
